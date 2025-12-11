@@ -1,7 +1,7 @@
 Option Explicit
 
 ' =========================================================================
-'   API Sleep (mais on utilisera SleepStop à la place)
+'   API Sleep (non bloquant via SleepStop)
 ' =========================================================================
 #If VBA7 Then
     Private Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As LongPtr)
@@ -11,7 +11,7 @@ Option Explicit
 
 
 ' =========================================================================
-'   MODULE STOP – Interruption propre
+'   MODULE STOP — Gestion arrêt utilisateur
 ' =========================================================================
 Public GlobalStopFlag As Boolean
 
@@ -20,22 +20,22 @@ Public Sub StopProcess()
     GlobalStopFlag = True
 End Sub
 
-' Reset automatique au début du traitement
+' Remise à zéro au début du traitement
 Public Sub ResetStopFlag()
     GlobalStopFlag = False
 End Sub
 
-' Indique si l’utilisateur demande d’arrêter
+' Interrogation STOP
 Public Function ShouldStop() As Boolean
     ShouldStop = GlobalStopFlag
 End Function
 
-' Sleep non bloquant — respecte STOP immédiatement
+' Sleep non bloquant qui respecte STOP
 Public Sub SleepStop(ms As Long)
     Dim t As Double: t = Timer
-    Dim target As Double: target = ms / 1000#
+    Dim d As Double: d = ms / 1000#
 
-    Do While Timer - t < target
+    Do While Timer - t < d
         If GlobalStopFlag Then Exit Sub
         DoEvents
     Loop
@@ -43,7 +43,7 @@ End Sub
 
 
 ' =========================================================================
-'   TEST INTERNET — 100% FIABLE VERSION WINHTTP
+'   TEST INTERNET (WinHTTP FIABILISÉ)
 ' =========================================================================
 Public Function HasInternetConnection() As Boolean
     On Error GoTo FailSafe
@@ -51,13 +51,8 @@ Public Function HasInternetConnection() As Boolean
     Dim http As Object
     Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
 
-    ' Timeout 3s
     http.SetTimeouts 3000, 3000, 3000, 3000
-
-    ' Ignore erreurs SSL (TLS, SNI etc.)
-    On Error Resume Next
     http.Option(6) = &H800000
-    On Error GoTo FailSafe
 
     http.Open "GET", "https://raw.githubusercontent.com", False
 
@@ -84,15 +79,15 @@ Public Function CheckRemoteLock() As Boolean
     Dim url As String
     Dim resp As String
 
-    ' 1) Test Internet obligatoire
+    ' 1) Vérification Internet
     If Not HasInternetConnection() Then
         MsgBox "Aucune connexion Internet détectée." & vbCrLf & _
-               "Vérifiez votre connexion WiFi/4G.", vbCritical
+               "Vérifiez votre réseau WiFi/4G.", vbCritical
         CheckRemoteLock = False
         Exit Function
     End If
 
-    ' 2) Téléchargement du lock
+    ' 2) Lecture lock.txt
     On Error GoTo FailSafe
 
     url = "https://raw.githubusercontent.com/Nick-O-lay/ANAVEO/main/lock.txt"
@@ -111,19 +106,13 @@ Public Function CheckRemoteLock() As Boolean
     If http.readyState <> 4 Then GoTo FailSafe
     If http.status <> 200 Then GoTo FailSafe
 
-    resp = http.responseText
+    resp = Trim(Replace(Replace(http.responseText, vbCr, ""), vbLf, ""))
 
-    ' Nettoyage
-    resp = Replace(resp, vbCr, "")
-    resp = Replace(resp, vbLf, "")
-    resp = Trim(resp)
-
-    ' 3) Interprétation
     If UCase(resp) = "ALLOW" Then
         CheckRemoteLock = True
         Exit Function
     Else
-        MsgBox "Verrou distant : accès refusé." & vbCrLf & _
+        MsgBox "Accès refusé par le verrou distant." & vbCrLf & _
                "Contact : +33 (0)6 42 12 50 12", vbCritical
         CheckRemoteLock = False
         Exit Function
@@ -131,31 +120,26 @@ Public Function CheckRemoteLock() As Boolean
 
 FailSafe:
     MsgBox "Impossible d'accéder au verrou distant." & vbCrLf & _
-           "Vérifiez votre connexion puis réessayez.", vbCritical
+           "Vérifiez votre connexion.", vbCritical
     CheckRemoteLock = False
 End Function
 
 
-
 ' =========================================================================
-'   POINT D’ENTRÉE PUBLIC — APPELÉ PAR LE LOADER
+'   POINT D’ENTRÉE APPELÉ PAR LE LOADER
 ' =========================================================================
 Public Sub GenerateListe()
-    ' Vérification lock distant
     If Not CheckRemoteLock() Then Exit Sub
-
-    ' Lancement traitement principal
     Export_From_N8N
 End Sub
 
 
-
 ' =========================================================================
-'   EXPORT PRINCIPAL — Envoi vers N8N + STOP + ETA
+'   EXPORT PRINCIPAL — AVEC STOP, ETA, RETRY, JSON
 ' =========================================================================
-Public Sub Export_From_N8N()
+Sub Export_From_N8N()
 
-    ResetStopFlag ' IMPORTANT !
+    ResetStopFlag ' IMPORTANT
 
     Dim wsSrc As Worksheet, wsDst As Worksheet
     Dim lastRow As Long, lastCol As Long
@@ -171,7 +155,7 @@ Public Sub Export_From_N8N()
 
     url = "https://n8n.srv933744.hstgr.cloud/webhook/42402c7f-7d45-42be-8706-80d104efe948"
 
-    ' Reset destination
+    ' RESET DESTINATION
     wsDst.Range("A3:W100000").ClearContents
 
     wsDst.Range("A2:W2").Value = Array( _
@@ -190,7 +174,7 @@ Public Sub Export_From_N8N()
 
 
     ' =========================================================================
-    '   BOUCLE LIGNE PAR LIGNE (AVEC STOP)
+    '   BOUCLE LIGNE PAR LIGNE — AVEC STOP
     ' =========================================================================
     For r = 2 To lastRow
 
@@ -199,14 +183,13 @@ Public Sub Export_From_N8N()
 
         jsonRequest = BuildJsonFromRow(wsSrc, r, lastCol)
 
-        ' ============================
-        ' Tentatives multiples
-        ' ============================
         Dim success As Boolean: success = False
         Dim attempts As Long
         Dim waitList As Variant
         waitList = Array(300, 800, 1500, 2500, 4000)
 
+
+        ' ---- 5 TENTATIVES ----
         For attempts = 0 To 4
 
             If ShouldStop() Then GoTo EndProcess
@@ -220,7 +203,6 @@ Public Sub Export_From_N8N()
                 http.send jsonRequest
             On Error GoTo 0
 
-            ' Timeout réception (5 sec)
             Dim t As Double: t = Timer
             Do While http.readyState <> 4 And (Timer - t) < 5
                 If ShouldStop() Then GoTo EndProcess
@@ -241,15 +223,12 @@ Public Sub Export_From_N8N()
             SleepStop CLng(waitList(attempts))
         Next attempts
 
-        ' ============================
-        ' Succès
-        ' ============================
+
+        ' ---- SUCCÈS ----
         If success Then
             WriteJsonToSheet wsDst, dstRow, jsonResponse
 
-        ' ============================
-        ' Échec -> copie brute
-        ' ============================
+        ' ---- ÉCHEC : copie brute ----
         Else
             Dim col As Long
             For col = 1 To lastCol
@@ -261,7 +240,7 @@ Public Sub Export_From_N8N()
 
 
         ' =========================================================================
-        '   ETA + BARRE PROGRESSION
+        '   BARRE DE PROGRESSION + ETA
         ' =========================================================================
         elapsed = Timer - startTime
         avgTime = elapsed / (r - 1 + 0.0001)
@@ -269,7 +248,7 @@ Public Sub Export_From_N8N()
 
         Application.StatusBar = _
             "Progression : " & Format((r - 1) / (lastRow - 1), "0.0%") & _
-            " | Temps restant : " & Format(remaining / 60, "0.0") & " min"
+            " | Temps restant estimé : " & Format(remaining / 60, "0.0") & " min"
 
     Next r
 
@@ -278,7 +257,7 @@ Public Sub Export_From_N8N()
 
 
 ' =========================================================================
-' SORTIES PROPRES
+'   SORTIES PROPRES
 ' =========================================================================
 EndProcess:
     Application.StatusBar = False
@@ -294,9 +273,9 @@ End Sub
 
 
 ' =========================================================================
-' BUILD JSON LIGNE
+'   JSON CONSTRUCTION
 ' =========================================================================
-Public Function BuildJsonFromRow(ws As Worksheet, row As Long, lastCol As Long) As String
+Function BuildJsonFromRow(ws As Worksheet, row As Long, lastCol As Long) As String
     Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
     Dim col As Long
 
@@ -309,9 +288,9 @@ End Function
 
 
 ' =========================================================================
-' OBJET → JSON
+'   OBJET → JSON
 ' =========================================================================
-Public Function DictToJson(dict As Object) As String
+Function DictToJson(dict As Object) As String
     Dim key As Variant, s As String
     s = "{"
 
@@ -325,11 +304,10 @@ Public Function DictToJson(dict As Object) As String
 End Function
 
 
-
 ' =========================================================================
-' PARSEUR JSON SIMPLE
+'   PARSEUR JSON SIMPLE
 ' =========================================================================
-Public Function ParseSimpleJsonObject(json As String) As Object
+Function ParseSimpleJsonObject(json As String) As Object
     Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
     Dim cleaned As String: cleaned = Trim(json)
 
@@ -347,6 +325,7 @@ Public Function ParseSimpleJsonObject(json As String) As Object
     Dim kv() As String, k As String, v As String
 
     For i = LBound(parts) To UBound(parts)
+
         kv = Split(parts(i), ":")
 
         If UBound(kv) >= 1 Then
