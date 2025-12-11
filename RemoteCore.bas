@@ -49,18 +49,18 @@ Public Function HasInternetConnection() As Boolean
     On Error GoTo Fail
 
     Dim http As Object
-    Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
+    Set http = CreateObject("MSXML2.XMLHTTP")
 
-    ' Un domaine ultra-fiable : GitHub Raw
-    http.Open "GET", "https://raw.githubusercontent.com", False
+    http.Open "HEAD", "https://www.google.com", False
     http.send
 
-    HasInternetConnection = (http.status = 200)
+    HasInternetConnection = (http.readyState = 4 And http.status = 200)
     Exit Function
 
 Fail:
     HasInternetConnection = False
 End Function
+
 
 
 ' =========================================================================
