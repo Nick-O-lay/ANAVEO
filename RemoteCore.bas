@@ -20,7 +20,7 @@ Public Sub StopProcess()
     GlobalStopFlag = True
 End Sub
 
-' Remise à zéro au début du traitement
+' Reset automatique au début du traitement
 Public Sub ResetStopFlag()
     GlobalStopFlag = False
 End Sub
@@ -42,96 +42,18 @@ Public Sub SleepStop(ms As Long)
 End Sub
 
 
-' =========================================================================
-'   TEST INTERNET (WinHTTP FIABILISÉ)
-' =========================================================================
-Public Function HasInternetConnection() As Boolean
-    On Error GoTo FailSafe
-
-    Dim http As Object
-    Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
-
-    http.SetTimeouts 3000, 3000, 3000, 3000
-    http.Option(6) = &H800000
-
-    http.Open "GET", "https://raw.githubusercontent.com", False
-
-    On Error Resume Next
-    http.send
-    If Err.Number <> 0 Then GoTo FailSafe
-    On Error GoTo FailSafe
-
-    If http.readyState <> 4 Then GoTo FailSafe
-
-    HasInternetConnection = (http.status >= 200 And http.status < 400)
-    Exit Function
-
-FailSafe:
-    HasInternetConnection = False
-End Function
-
-
-' =========================================================================
-'   CHECKREMOTELOCK — Vérification ALLOW / DENY
-' =========================================================================
-Public Function CheckRemoteLock() As Boolean
-    Dim http As Object
-    Dim url As String
-    Dim resp As String
-
-    ' 1) Vérification Internet
-    If Not HasInternetConnection() Then
-        MsgBox "Aucune connexion Internet détectée." & vbCrLf & _
-               "Vérifiez votre réseau WiFi/4G.", vbCritical
-        CheckRemoteLock = False
-        Exit Function
-    End If
-
-    ' 2) Lecture lock.txt
-    On Error GoTo FailSafe
-
-    url = "https://raw.githubusercontent.com/Nick-O-lay/ANAVEO/main/lock.txt"
-
-    Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
-    http.SetTimeouts 3000, 3000, 3000, 3000
-    http.Option(6) = &H800000
-
-    http.Open "GET", url, False
-
-    On Error Resume Next
-    http.send
-    If Err.Number <> 0 Then GoTo FailSafe
-    On Error GoTo FailSafe
-
-    If http.readyState <> 4 Then GoTo FailSafe
-    If http.status <> 200 Then GoTo FailSafe
-
-    resp = Trim(Replace(Replace(http.responseText, vbCr, ""), vbLf, ""))
-
-    If UCase(resp) = "ALLOW" Then
-        CheckRemoteLock = True
-        Exit Function
-    Else
-        MsgBox "Accès refusé par le verrou distant." & vbCrLf & _
-               "Contact : +33 (0)6 42 12 50 12", vbCritical
-        CheckRemoteLock = False
-        Exit Function
-    End If
-
-FailSafe:
-    MsgBox "Impossible d'accéder au verrou distant." & vbCrLf & _
-           "Vérifiez votre connexion.", vbCritical
-    CheckRemoteLock = False
-End Function
-
 
 ' =========================================================================
 '   POINT D’ENTRÉE APPELÉ PAR LE LOADER
 ' =========================================================================
+' ➜ AUCUN TEST INTERNET
+' ➜ AUCUN VERROU LOCK
+' ➜ EXECUTION DIRECTE
+' =========================================================================
 Public Sub GenerateListe()
-    If Not CheckRemoteLock() Then Exit Sub
     Export_From_N8N
 End Sub
+
 
 
 ' =========================================================================
@@ -256,6 +178,7 @@ Sub Export_From_N8N()
     GoTo EndProcessOK
 
 
+
 ' =========================================================================
 '   SORTIES PROPRES
 ' =========================================================================
@@ -287,6 +210,7 @@ Function BuildJsonFromRow(ws As Worksheet, row As Long, lastCol As Long) As Stri
 End Function
 
 
+
 ' =========================================================================
 '   OBJET → JSON
 ' =========================================================================
@@ -302,6 +226,7 @@ Function DictToJson(dict As Object) As String
     s = s & "}"
     DictToJson = s
 End Function
+
 
 
 ' =========================================================================
@@ -325,7 +250,6 @@ Function ParseSimpleJsonObject(json As String) As Object
     Dim kv() As String, k As String, v As String
 
     For i = LBound(parts) To UBound(parts)
-
         kv = Split(parts(i), ":")
 
         If UBound(kv) >= 1 Then
