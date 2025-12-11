@@ -1,3 +1,4 @@
+Attribute VB_Name = "RemoteCore"
 Option Explicit
 
 ' =====================================================================
@@ -8,7 +9,7 @@ Private Const GITHUB_LOCK As String = _
 
 
 ' =====================================================================
-'      ALIAS : LA MACRO QUE TON BOUTON APPELLE
+'      ALIAS : LA MACRO QUE LE LOADER EXCEL APPELLE
 ' =====================================================================
 Public Sub GenerateListe()
     MainEntry
@@ -16,7 +17,7 @@ End Sub
 
 
 ' =====================================================================
-'      POINT D'ENTRÉE PRINCIPAL — EXÉCUTÉ APRÈS MISE À JOUR DU MODULE
+'      POINT D'ENTRÉE PRINCIPAL — EXÉCUTÉ APRÈS IMPORT DU MODULE
 ' =====================================================================
 Public Sub MainEntry()
     
@@ -26,7 +27,7 @@ Public Sub MainEntry()
         Exit Sub
     End If
     
-    ' 2) Lancement du vrai code métier
+    ' 2) Lancer le vrai code métier
     RunBusinessLogic
 
 End Sub
@@ -79,17 +80,16 @@ End Function
 ' =====================================================================
 Private Sub RunBusinessLogic()
 
-    ' Ici tu mets ton vrai traitement
-    ' Exemple provisoire :
-    
+    ' Exemple provisoire
     MsgBox "Code distant autorisé et exécuté depuis GitHub.", vbInformation
     
-    ' =============================================
-    ' ton vrai code sera ici :
+    ' ======================================================
+    ' 👉 Place ici ton vrai code métier, par exemple :
     '
+    ' Call Export_From_N8N
     ' Call Fetch_CA_Chunk_Start
     ' Call Fetch_Dirigeants_Start
-    ' Call Export_From_N8N
-    ' =============================================
-    
+    ' etc.
+    ' ======================================================
+
 End Sub
