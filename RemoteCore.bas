@@ -1,41 +1,58 @@
 Attribute VB_Name = "RemoteCore"
 Option Explicit
 
-' ============================================================
-' CONFIG DISTANTE
-' ============================================================
+' =====================================================================
+'      CONFIG DISTANTE (LOCK GITHUB)
+' =====================================================================
 Private Const GITHUB_LOCK As String = _
     "https://raw.githubusercontent.com/Nick-O-lay/ANAVEO/main/lock.txt"
 
 
-' ============================================================
-' POINT D'ENTRÉE GLOBAL — APPELÉ DEPUIS EXCEL
-' ============================================================
+' =====================================================================
+'      ALIAS : LA MACRO QUE TON BOUTON APPELLE
+' =====================================================================
+Public Sub GenerateListe()
+    MainEntry
+End Sub
+
+
+' =====================================================================
+'      POINT D'ENTRÉE PRINCIPAL — EXÉCUTÉ APRÈS MISE À JOUR DU MODULE
+' =====================================================================
 Public Sub MainEntry()
-    ' 1) Vérifier le lock DANS le code GitHub
+    
+    ' 1) Vérifier le verrou distant
     If Not CheckRemoteLock() Then
         MsgBox "Exécution bloquée par le verrou distant (lock.txt <> ALLOW).", vbCritical
         Exit Sub
     End If
     
-    ' 2) Si on passe ici, ALLOW → on exécute le vrai code
+    ' 2) Lancement du vrai code métier
     RunBusinessLogic
+
 End Sub
 
 
-' ============================================================
-' LOGIQUE D'AUTORISATION CÔTÉ GITHUB
-' ============================================================
+' =====================================================================
+'      VÉRIFICATION DU LOCK GITHUB
+' =====================================================================
 Private Function CheckRemoteLock() As Boolean
+
     Dim resp As String
     resp = RemoteDownloadText(GITHUB_LOCK)
     
     resp = Trim$(UCase$(resp))
+    
     CheckRemoteLock = (resp = "ALLOW")
+
 End Function
 
 
+' =====================================================================
+'      TÉLÉCHARGEMENT TEXTE (HTTP GET)
+' =====================================================================
 Private Function RemoteDownloadText(ByVal url As String) As String
+    
     On Error GoTo Fail
     
     Dim http As Object
@@ -49,22 +66,31 @@ Private Function RemoteDownloadText(ByVal url As String) As String
     Else
         RemoteDownloadText = ""
     End If
+    
     Exit Function
-
+    
 Fail:
     RemoteDownloadText = ""
+
 End Function
 
 
-' ============================================================
-' TON VRAI CODE MÉTIER
-' ============================================================
+' =====================================================================
+'      CODE MÉTIER PRINCIPAL (À PERSONNALISER)
+' =====================================================================
 Private Sub RunBusinessLogic()
-    ' TODO : ici tu mets tout ton vrai code.
-    ' Exemple :
+
+    ' Ici tu mets ton vrai traitement
+    ' Exemple provisoire :
+    
     MsgBox "Code distant autorisé et exécuté depuis GitHub.", vbInformation
     
-    ' Appel ex :
+    ' =============================================
+    ' ton vrai code sera ici :
+    '
     ' Call Fetch_CA_Chunk_Start
-    ' Call Module1.Traitement...
+    ' Call Fetch_Dirigeants_Start
+    ' Call Export_From_N8N
+    ' =============================================
+    
 End Sub
