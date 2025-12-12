@@ -45,7 +45,25 @@ Public Sub GenerateListe()
     Export_From_N8N
 End Sub
 
+' =========================================================================
+'   JSON → FEUILLE
+' =========================================================================
+Public Sub WriteJsonToSheet(ws As Worksheet, row As Long, jsonText As String)
 
+    Dim obj As Object
+    Set obj = ParseSimpleJsonObject(jsonText)
+
+    If obj Is Nothing Then Exit Sub
+
+    Dim key As Variant
+    Dim col As Long: col = 1
+
+    For Each key In obj.Keys
+        ws.Cells(row, col).Value = obj(key)
+        col = col + 1
+    Next key
+
+End Sub
 
 ' =========================================================================
 '   EXPORT PRINCIPAL — AVEC STOP, ETA, RETRY
@@ -174,25 +192,7 @@ End Sub
 
 
 
-' =========================================================================
-'   JSON → FEUILLE
-' =========================================================================
-Public Sub WriteJsonToSheet(ws As Worksheet, row As Long, jsonText As String)
 
-    Dim obj As Object
-    Set obj = ParseSimpleJsonObject(jsonText)
-
-    If obj Is Nothing Then Exit Sub
-
-    Dim key As Variant
-    Dim col As Long: col = 1
-
-    For Each key In obj.Keys
-        ws.Cells(row, col).Value = obj(key)
-        col = col + 1
-    Next key
-
-End Sub
 
 
 
