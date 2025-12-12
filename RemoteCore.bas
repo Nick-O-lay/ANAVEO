@@ -188,23 +188,17 @@ End Sub
 '   JSON → FEUILLE
 ' =========================================================================
 Public Sub WriteJsonToSheet(ws As Worksheet, row As Long, jsonText As String)
-
     Dim obj As Object
     Set obj = ParseSimpleJsonObject(jsonText)
-
     If obj Is Nothing Then Exit Sub
 
     Dim key As Variant
     Dim col As Long: col = 1
-
-    For Each key In obj.Keys
-        ws.Cells(row, col).Value = obj(key)
+    For Each key In obj.keys
+        ws.Cells(row, col).value = obj(key)
         col = col + 1
     Next key
-
 End Sub
-
-
 
 ' =========================================================================
 '   JSON PARSER SIMPLE
