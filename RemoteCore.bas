@@ -2,7 +2,7 @@ Attribute VB_Name = "RemoteCore"
 Option Explicit
 
 ' =========================================================================
-'   API Sleep (non bloquant grâce à SleepStop)
+'   API Sleep (non bloquant grâce à SleepStop) - PROUT
 ' =========================================================================
 #If VBA7 Then
     Private Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As LongPtr)
