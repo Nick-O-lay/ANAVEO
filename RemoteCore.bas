@@ -80,7 +80,7 @@ Public Sub Export_From_N8N()
 
     lastRow = wsSrc.Cells(wsSrc.Rows.Count, "A").End(xlUp).Row
     lastCol = wsSrc.Cells(1, wsSrc.Columns.Count).End(xlToLeft).Column
-
+    wsDst.Columns("F").NumberFormat = "@"
     dstRow = 3
     startTime = Timer
 
