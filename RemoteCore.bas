@@ -1,7 +1,8 @@
+Attribute VB_Name = "RemoteCore"
 Option Explicit
 
 ' =========================================================================
-'   API Sleep (non bloquant via SleepStop)
+'   API Sleep (non bloquant grâce à SleepStop)
 ' =========================================================================
 #If VBA7 Then
     Private Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As LongPtr)
@@ -11,7 +12,7 @@ Option Explicit
 
 
 ' =========================================================================
-'   STOP PROCESS — Interruption utilisateur
+'   STOP PROCESS — Interruption propre
 ' =========================================================================
 Public GlobalStopFlag As Boolean
 
@@ -37,36 +38,16 @@ Public Sub SleepStop(ms As Long)
 End Sub
 
 
-
 ' =========================================================================
-'   POINT D’ENTRÉE PRINCIPAL
+'   POINT D’ENTRÉE PRINCIPAL (appelé par le Loader Excel)
 ' =========================================================================
 Public Sub GenerateListe()
     Export_From_N8N
 End Sub
 
-' =========================================================================
-'   JSON → FEUILLE
-' =========================================================================
-Public Sub WriteJsonToSheet(ws As Worksheet, row As Long, jsonText As String)
-
-    Dim obj As Object
-    Set obj = ParseSimpleJsonObject(jsonText)
-
-    If obj Is Nothing Then Exit Sub
-
-    Dim key As Variant
-    Dim col As Long: col = 1
-
-    For Each key In obj.Keys
-        ws.Cells(row, col).Value = obj(key)
-        col = col + 1
-    Next key
-
-End Sub
 
 ' =========================================================================
-'   EXPORT PRINCIPAL — AVEC STOP, ETA, RETRY
+'   EXPORT PRINCIPAL — HTTP POST + RETRY + ETA + STOP
 ' =========================================================================
 Public Sub Export_From_N8N()
 
@@ -86,7 +67,7 @@ Public Sub Export_From_N8N()
 
     url = "https://n8n.srv933744.hstgr.cloud/webhook/42402c7f-7d45-42be-8706-80d104efe948"
 
-    ' RESET de la destination
+    ' RESET destination
     wsDst.Range("A3:W100000").ClearContents
 
     wsDst.Range("A2:W2").Value = Array( _
@@ -105,7 +86,7 @@ Public Sub Export_From_N8N()
 
 
     ' =========================================================================
-    '   BOUCLE
+    '   BOUCLE PRINCIPALE
     ' =========================================================================
     For r = 2 To lastRow
 
@@ -116,10 +97,13 @@ Public Sub Export_From_N8N()
 
         Dim success As Boolean: success = False
         Dim attempts As Long
+
+        ' Liste des temps d'attente entre tentatives (ms)
         Dim waitList As Variant: waitList = Array(300, 800, 1500, 2500, 4000)
 
-
-        ' 5 tentatives HTTP
+        ' ----------------------------
+        '   RETRY HTTP (5 tentatives)
+        ' ----------------------------
         For attempts = 0 To 4
 
             If ShouldStop() Then GoTo EndProcess
@@ -132,6 +116,7 @@ Public Sub Export_From_N8N()
                 http.send jsonRequest
             On Error GoTo 0
 
+            ' attendre la réponse max 5s
             Dim t As Double: t = Timer
             Do While http.readyState <> 4 And (Timer - t) < 5
                 If ShouldStop() Then GoTo EndProcess
@@ -146,14 +131,19 @@ Public Sub Export_From_N8N()
                 Exit For
             End If
 
+            ' attendre avant nouvelle tentative
             SleepStop waitList(attempts)
+
         Next attempts
 
 
+        ' -------------------------
+        '   ÉCRITURE RESULTATS
+        ' -------------------------
         If success Then
             WriteJsonToSheet wsDst, dstRow, jsonResponse
         Else
-            ' copie brute en cas d'échec
+            ' copie brute si échec
             Dim c As Long
             For c = 1 To lastCol
                 wsDst.Cells(dstRow, c).Value = wsSrc.Cells(r, c).Value
@@ -163,14 +153,16 @@ Public Sub Export_From_N8N()
         dstRow = dstRow + 1
 
 
-        ' ETA + barre de progression
+        ' -------------------------
+        '   ETAT / ETA / PROGRESS
+        ' -------------------------
         elapsed = Timer - startTime
         avgTime = elapsed / (r - 1 + 0.0001)
         remaining = avgTime * (lastRow - r + 1)
 
         Application.StatusBar = _
             "Progression : " & Format((r - 1) / (lastRow - 1), "0.0%") & _
-            "  | Temps restant : " & Format(remaining / 60, "0.0") & " min"
+            " | Temps restant : " & Format(remaining / 60, "0.0") & " min"
 
     Next r
 
@@ -192,7 +184,25 @@ End Sub
 
 
 
+' =========================================================================
+'   JSON → FEUILLE
+' =========================================================================
+Public Sub WriteJsonToSheet(ws As Worksheet, row As Long, jsonText As String)
 
+    Dim obj As Object
+    Set obj = ParseSimpleJsonObject(jsonText)
+
+    If obj Is Nothing Then Exit Sub
+
+    Dim key As Variant
+    Dim col As Long: col = 1
+
+    For Each key In obj.Keys
+        ws.Cells(row, col).Value = obj(key)
+        col = col + 1
+    Next key
+
+End Sub
 
 
 
@@ -209,13 +219,13 @@ Public Function ParseSimpleJsonObject(json As String) As Object
         Exit Function
     End If
 
-    ' Retire []
+    ' Nettoyage []
     If Left(cleaned, 1) = "[" Then cleaned = Mid(cleaned, 2)
     If Right(cleaned, 1) = "]" Then cleaned = Left(cleaned, Len(cleaned) - 1)
 
     cleaned = Trim(cleaned)
 
-    ' Retire {}
+    ' Nettoyage {}
     If Left(cleaned, 1) = "{" Then cleaned = Mid(cleaned, 2)
     If Right(cleaned, 1) = "}" Then cleaned = Left(cleaned, Len(cleaned) - 1)
 
