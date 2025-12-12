@@ -78,9 +78,10 @@ Public Sub Export_From_N8N()
         "Longitude", "Latitude", "Adresse complète", "Code postal", "Ville", _
         "Siren", "Siret", "CA")
 
+    wsDst.Columns("F").NumberFormat = "@"
     lastRow = wsSrc.Cells(wsSrc.Rows.Count, "A").End(xlUp).Row
     lastCol = wsSrc.Cells(1, wsSrc.Columns.Count).End(xlToLeft).Column
-    wsDst.Columns("F").NumberFormat = "@"
+    
     dstRow = 3
     startTime = Timer
 
