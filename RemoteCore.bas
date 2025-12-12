@@ -11,30 +11,25 @@ Option Explicit
 
 
 ' =========================================================================
-'   MODULE STOP — Gestion arrêt utilisateur
+'   STOP PROCESS — Interruption utilisateur
 ' =========================================================================
 Public GlobalStopFlag As Boolean
 
-' Bouton STOP → N'appelle que ceci
 Public Sub StopProcess()
     GlobalStopFlag = True
 End Sub
 
-' Reset automatique au début du traitement
 Public Sub ResetStopFlag()
     GlobalStopFlag = False
 End Sub
 
-' Vérifie si STOP demandé
 Public Function ShouldStop() As Boolean
     ShouldStop = GlobalStopFlag
 End Function
 
-' Sleep non bloquant : s'interrompt immédiatement si STOP
 Public Sub SleepStop(ms As Long)
     Dim t As Double: t = Timer
     Dim limit As Double: limit = ms / 1000#
-
     Do While Timer - t < limit
         If GlobalStopFlag Then Exit Sub
         DoEvents
@@ -44,11 +39,7 @@ End Sub
 
 
 ' =========================================================================
-'   POINT D’ENTRÉE APPELÉ PAR LE LOADER
-' =========================================================================
-' → Plus de test Internet
-' → Plus de lock distant
-' → Exécution immédiate
+'   POINT D’ENTRÉE PRINCIPAL
 ' =========================================================================
 Public Sub GenerateListe()
     Export_From_N8N
@@ -57,7 +48,7 @@ End Sub
 
 
 ' =========================================================================
-'   EXPORT PRINCIPAL — AVEC STOP, RETRY, ETA
+'   EXPORT PRINCIPAL — AVEC STOP, ETA, RETRY
 ' =========================================================================
 Public Sub Export_From_N8N()
 
@@ -67,7 +58,8 @@ Public Sub Export_From_N8N()
     Dim lastRow As Long, lastCol As Long
     Dim r As Long, dstRow As Long
     Dim jsonRequest As String, jsonResponse As String
-    Dim http As Object, url As String
+    Dim http As Object
+    Dim url As String
 
     Dim startTime As Double, elapsed As Double, avgTime As Double, remaining As Double
 
@@ -76,7 +68,7 @@ Public Sub Export_From_N8N()
 
     url = "https://n8n.srv933744.hstgr.cloud/webhook/42402c7f-7d45-42be-8706-80d104efe948"
 
-    ' RESET DESTINATION
+    ' RESET de la destination
     wsDst.Range("A3:W100000").ClearContents
 
     wsDst.Range("A2:W2").Value = Array( _
@@ -95,7 +87,7 @@ Public Sub Export_From_N8N()
 
 
     ' =========================================================================
-    '   BOUCLE LIGNE PAR LIGNE
+    '   BOUCLE
     ' =========================================================================
     For r = 2 To lastRow
 
@@ -109,9 +101,7 @@ Public Sub Export_From_N8N()
         Dim waitList As Variant: waitList = Array(300, 800, 1500, 2500, 4000)
 
 
-        ' -----------------------------------------------------------------
-        '   5 TENTATIVES HTTP
-        ' -----------------------------------------------------------------
+        ' 5 tentatives HTTP
         For attempts = 0 To 4
 
             If ShouldStop() Then GoTo EndProcess
@@ -124,7 +114,6 @@ Public Sub Export_From_N8N()
                 http.send jsonRequest
             On Error GoTo 0
 
-            ' Timeout réception 5s
             Dim t As Double: t = Timer
             Do While http.readyState <> 4 And (Timer - t) < 5
                 If ShouldStop() Then GoTo EndProcess
@@ -134,104 +123,76 @@ Public Sub Export_From_N8N()
 
             jsonResponse = Trim(http.responseText)
 
-            If Len(jsonResponse) > 0 _
-               And InStr(jsonResponse, "{") > 0 _
-               And InStr(jsonResponse, "}") > 0 Then
-
+            If Len(jsonResponse) > 0 And InStr(jsonResponse, "{") > 0 Then
                 success = True
                 Exit For
             End If
 
-            SleepStop CLng(waitList(attempts))
+            SleepStop waitList(attempts)
         Next attempts
 
 
-        ' -----------------------------------------------------------------
-        '   SUCCÈS → écriture JSON
-        ' -----------------------------------------------------------------
         If success Then
             WriteJsonToSheet wsDst, dstRow, jsonResponse
-
-        ' -----------------------------------------------------------------
-        '   ÉCHEC → copie brute
-        ' -----------------------------------------------------------------
         Else
-            Dim col As Long
-            For col = 1 To lastCol
-                wsDst.Cells(dstRow, col).Value = wsSrc.Cells(r, col).Value
-            Next col
+            ' copie brute en cas d'échec
+            Dim c As Long
+            For c = 1 To lastCol
+                wsDst.Cells(dstRow, c).Value = wsSrc.Cells(r, c).Value
+            Next c
         End If
 
         dstRow = dstRow + 1
 
 
-
-        ' =========================================================================
-        '   BARRE DE PROGRESSION + ETA
-        ' =========================================================================
+        ' ETA + barre de progression
         elapsed = Timer - startTime
         avgTime = elapsed / (r - 1 + 0.0001)
         remaining = avgTime * (lastRow - r + 1)
 
         Application.StatusBar = _
             "Progression : " & Format((r - 1) / (lastRow - 1), "0.0%") & _
-            " | Temps restant : " & Format(remaining / 60, "0.0") & " min"
+            "  | Temps restant : " & Format(remaining / 60, "0.0") & " min"
 
     Next r
 
     MsgBox "Traitement terminé !", vbInformation
-    GoTo EndProcessOK
-
+    GoTo EndOK
 
 
 ' =========================================================================
-'   SORTIE PROPRE
+'   FIN
 ' =========================================================================
 EndProcess:
     Application.StatusBar = False
     MsgBox "Traitement interrompu.", vbExclamation
     Exit Sub
 
-EndProcessOK:
+EndOK:
     Application.StatusBar = False
-    Exit Sub
-
 End Sub
 
 
 
 ' =========================================================================
-'   CONSTRUCTION JSON
+'   JSON → FEUILLE
 ' =========================================================================
-Public Function BuildJsonFromRow(ws As Worksheet, row As Long, lastCol As Long) As String
-    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
-    Dim col As Long
+Public Sub WriteJsonToSheet(ws As Worksheet, row As Long, jsonText As String)
 
-    For col = 1 To lastCol
-        dict(ws.Cells(1, col).Value) = CStr(ws.Cells(row, col).Value)
-    Next col
+    Dim obj As Object
+    Set obj = ParseSimpleJsonObject(jsonText)
 
-    BuildJsonFromRow = DictToJson(dict)
-End Function
+    If obj Is Nothing Then Exit Sub
 
+    Dim key As Variant
+    Dim col As Long: col = 1
 
-
-' =========================================================================
-'   DICTIONNAIRE → JSON
-' =========================================================================
-Public Function DictToJson(dict As Object) As String
-    Dim key As Variant, s As String
-
-    s = "{"
-    For Each key In dict.Keys
-        s = s & """" & key & """:""" & Replace(CStr(dict(key)), """", "'") & ""","
+    For Each key In obj.Keys
+        ws.Cells(row, col).Value = obj(key)
+        col = col + 1
     Next key
 
-    If Right$(s, 1) = "," Then s = Left$(s, Len(s) - 1)
-    s = s & "}"
-
-    DictToJson = s
-End Function
+End Sub
 
 
 
@@ -239,24 +200,26 @@ End Function
 '   JSON PARSER SIMPLE
 ' =========================================================================
 Public Function ParseSimpleJsonObject(json As String) As Object
+
     Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
-
     Dim cleaned As String: cleaned = Trim(json)
-    If cleaned = "" Then Set ParseSimpleJsonObject = dict: Exit Function
 
-    ' Supprime crochets []
+    If cleaned = "" Then
+        Set ParseSimpleJsonObject = dict
+        Exit Function
+    End If
+
+    ' Retire []
     If Left(cleaned, 1) = "[" Then cleaned = Mid(cleaned, 2)
     If Right(cleaned, 1) = "]" Then cleaned = Left(cleaned, Len(cleaned) - 1)
 
     cleaned = Trim(cleaned)
-    If cleaned = "" Then Set ParseSimpleJsonObject = dict: Exit Function
 
-    ' Supprime accolades {}
+    ' Retire {}
     If Left(cleaned, 1) = "{" Then cleaned = Mid(cleaned, 2)
     If Right(cleaned, 1) = "}" Then cleaned = Left(cleaned, Len(cleaned) - 1)
 
     cleaned = Trim(cleaned)
-    If cleaned = "" Then Set ParseSimpleJsonObject = dict: Exit Function
 
     Dim parts() As String: parts = Split(cleaned, ",")
     Dim i As Long
@@ -274,4 +237,40 @@ Public Function ParseSimpleJsonObject(json As String) As Object
     Next i
 
     Set ParseSimpleJsonObject = dict
+End Function
+
+
+
+' =========================================================================
+'   CONSTRUCTION JSON
+' =========================================================================
+Public Function BuildJsonFromRow(ws As Worksheet, row As Long, lastCol As Long) As String
+    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
+    Dim c As Long
+
+    For c = 1 To lastCol
+        dict(ws.Cells(1, c).Value) = CStr(ws.Cells(row, c).Value)
+    Next c
+
+    BuildJsonFromRow = DictToJson(dict)
+End Function
+
+
+
+' =========================================================================
+'   DICTIONNAIRE → JSON
+' =========================================================================
+Public Function DictToJson(dict As Object) As String
+
+    Dim key As Variant
+    Dim s As String: s = "{"
+
+    For Each key In dict.Keys
+        s = s & """" & key & """:""" & Replace(CStr(dict(key)), """", "'") & ""","
+    Next key
+
+    If Right$(s, 1) = "," Then s = Left$(s, Len(s) - 1)
+    s = s & "}"
+
+    DictToJson = s
 End Function
