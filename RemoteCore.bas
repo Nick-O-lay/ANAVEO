@@ -132,7 +132,7 @@ Public Sub Export_From_N8N()
             End If
 
             ' attendre avant nouvelle tentative
-            SleepStop waitList(attempts)
+            SleepStop CLng(waitList(attempts))
 
         Next attempts
 
